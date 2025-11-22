@@ -1,0 +1,126 @@
+/*************************************************
+ * SR04M-2 거리 측정 + ESP32 T-DISPLAY
+ * - 상단에 Distance: 000mm 표시
+ * - 실시간 그래프 표시
+ * - 측정범위 : 25cm ~ 200cm
+ *************************************************/
+
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+#include <SPI.h>
+
+// ===================== 설정 =====================
+#define TRIG_PIN        22
+#define ECHO_PIN        21
+#define MEASURE_PERIOD  200     // 측정 주기(ms)
+
+// 그래프 표시 크기 (화면 최적화)
+#define GRAPH_X     10
+#define GRAPH_Y     35
+#define GRAPH_W     220
+#define GRAPH_H     100
+
+TFT_eSPI tft = TFT_eSPI();
+int graphPos = 0;
+int lastY = -1;
+
+// ===================== 거리 측정 =====================
+long measureDistanceMM() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  //delayMicroseconds(10);
+  delayMicroseconds(250);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duration = pulseIn(ECHO_PIN, HIGH, 25000);
+  if (duration == 0) return -1;
+
+  return duration / 5.8;
+}
+
+long measureDistanceCM() {
+  // Trigger
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(250);
+  digitalWrite(TRIG_PIN, LOW);
+  // Echo
+  long duration = pulseIn(ECHO_PIN, HIGH, 25000);   //(ECHO_PIN, HIGH, ULTRA_TIMEOUT);
+  if (duration == 0) return -1;
+  // 공식 계산
+  float distance = (duration / 2.0) * 0.0343;  
+  long result = round(distance) + 2;  
+  return result;
+}
+
+
+
+// ===================== 그래프 표시 =====================
+void drawGraphPoint(long distCM) {
+  if (distCM < 0) return;
+
+  int value = distCM;
+  if (value > 200) value = 200;
+
+  int y = GRAPH_Y + GRAPH_H - map(value, 0, 220, 0, GRAPH_H);
+  int x = GRAPH_X + graphPos;
+
+  if (lastY >= 0) {
+    tft.drawLine(x - 1, lastY, x, y, TFT_GREEN);
+  }
+
+  lastY = y;
+  graphPos++;
+
+  if (graphPos >= GRAPH_W) {
+    graphPos = 0;
+    lastY = -1;
+    tft.fillRect(GRAPH_X, GRAPH_Y, GRAPH_W, GRAPH_H, TFT_BLACK);
+    tft.drawRect(GRAPH_X, GRAPH_Y, GRAPH_W, GRAPH_H, TFT_BLUE);
+  }
+}
+
+// ===================== 초기화 =====================
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  tft.init();
+  tft.setRotation(1);
+  tft.fillScreen(TFT_BLACK);
+
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.setTextSize(2);
+
+  // 상단 타이틀 변경
+  tft.setCursor(10, 10);
+  tft.print("Distance");
+
+  tft.drawRect(GRAPH_X, GRAPH_Y, GRAPH_W, GRAPH_H, TFT_BLUE);
+}
+
+// ===================== 메인 루프 =====================
+void loop() {
+  //long dist = measureDistanceMM();
+  long dist = measureDistanceCM();
+
+  // 상단 Distance 표시 영역 업데이트
+  tft.fillRect(120, 0, 120, 30, TFT_BLACK);
+  tft.setCursor(120, 10);
+
+  if (dist < 0)
+    //tft.print("0000mm");
+    //tft.print("000cm");
+    tft.print("___cm");
+  else
+    //tft.printf("%04ldmm", dist);
+    tft.printf("%03ldcm", dist);
+
+  drawGraphPoint(dist);
+
+  delay(MEASURE_PERIOD);
+}
